@@ -1,15 +1,17 @@
-from datetime import datetime
-from fastapi.responses import FileResponse
-import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
+
 import pandas as pd
+import os
+
+from datetime import datetime
+
+# ---------------------------------------------------
+# APP
+# ---------------------------------------------------
 
 app = FastAPI()
-
-# ---------------------------------------------------
-# ENABLE CORS
-# ---------------------------------------------------
 
 app.add_middleware(
     CORSMiddleware,
@@ -20,73 +22,63 @@ app.add_middleware(
 )
 
 # ---------------------------------------------------
-# LOAD FILES
+# FILES
 # ---------------------------------------------------
 
-farmers_file = r"C:\Users\HAMZA P\Desktop\farm_planner\output\Final_Field_Plan.xlsx"
+farmers_file = "data/Final_Field_Plan.xlsx"
 
-routes_file = r"C:\Users\HAMZA P\Desktop\farm_planner\output\Final_Routes.xlsx"
+routes_file = "data/Final_Routes.xlsx"
+
+progress_file = "progress.csv"
+
+# ---------------------------------------------------
+# LOAD DATA
+# ---------------------------------------------------
 
 farmers_df = pd.read_excel(farmers_file)
 
 routes_df = pd.read_excel(routes_file)
 
-# ---------------------------------------------------
-# CLEAN DATA
-# ---------------------------------------------------
+farmers_df = farmers_df.fillna("")
 
-farmers_df['Day'] = (
-    farmers_df['Day']
-    .astype(float)
-    .astype(int)
-    .astype(str)
-)
-
-routes_df['Day'] = (
-    routes_df['Day']
-    .astype(float)
-    .astype(int)
-    .astype(str)
-)
-
-farmers_df['Team'] = (
-    farmers_df['Team']
-    .astype(str)
-    .str.strip()
-)
-
-routes_df['Team'] = (
-    routes_df['Team']
-    .astype(str)
-    .str.strip()
-)
+routes_df = routes_df.fillna("")
 
 # ---------------------------------------------------
-# HOME
+# CREATE PROGRESS FILE
 # ---------------------------------------------------
 
-@app.get("/")
-def home():
+if not os.path.exists(progress_file):
 
-    return {
-        "message": "Farm Dashboard API Running"
-    }
+    progress_df = pd.DataFrame(columns=[
+        "Bp Number farms",
+        "Status",
+        "Completed_Time"
+    ])
+
+    progress_df.to_csv(progress_file, index=False)
 
 # ---------------------------------------------------
-# GET DAYS
+# GET DATES
 # ---------------------------------------------------
 
 @app.get("/days")
 def get_days():
 
-    days = sorted(
-        farmers_df['Day']
-        .astype(int)
-        .unique()
-        .tolist()
+    # Convert to datetime for proper sorting
+    farmers_df['Date'] = pd.to_datetime(
+        farmers_df['Date'],
+        errors='coerce'
     )
 
-    return days
+    # Sort dates properly
+    sorted_dates = farmers_df['Date'] \
+        .dropna() \
+        .sort_values() \
+        .dt.strftime('%d-%m-%Y') \
+        .unique() \
+        .tolist()
+
+    return sorted_dates
 
 # ---------------------------------------------------
 # GET TEAMS
@@ -95,27 +87,53 @@ def get_days():
 @app.get("/teams/{day}")
 def get_teams(day: str):
 
-    # Debug print
-    print("Selected Day:", day)
+    # Convert incoming string to datetime
+    selected_date = pd.to_datetime(
+        day,
+        format='%d-%m-%Y',
+        errors='coerce'
+    )
 
-    # Convert safely
-    subset = farmers_df[
-        farmers_df['Day'].astype(str).str.strip()
-        ==
-        str(day).strip()
+    filtered = farmers_df[
+        farmers_df['Date'] == selected_date
     ]
 
-    print(subset[['Day', 'Team']].head())
-
-    teams = (
-        subset['Team']
+    teams = sorted(
+        filtered['Team']
         .astype(str)
-        .str.strip()
         .unique()
         .tolist()
     )
 
     return teams
+
+# ---------------------------------------------------
+# GET VILLAGES
+# ---------------------------------------------------
+
+@app.get("/villages/{day}/{team}")
+def get_villages(day: str, team: str):
+
+    selected_date = pd.to_datetime(
+        day,
+        format='%d-%m-%Y',
+        errors='coerce'
+    )
+
+    filtered = farmers_df[
+        (farmers_df['Date'] == selected_date)
+        &
+        (farmers_df['Team'].astype(str) == str(team))
+    ]
+
+    villages = sorted(
+        filtered['village']
+        .astype(str)
+        .unique()
+        .tolist()
+    )
+
+    return villages
 
 # ---------------------------------------------------
 # GET FARMERS
@@ -124,13 +142,19 @@ def get_teams(day: str):
 @app.get("/farmers/{day}/{team}")
 def get_farmers(day: str, team: str):
 
-    subset = farmers_df[
-        (farmers_df['Day'] == str(day))
+    selected_date = pd.to_datetime(
+        day,
+        format='%d-%m-%Y',
+        errors='coerce'
+    )
+
+    filtered = farmers_df[
+        (farmers_df['Date'] == selected_date)
         &
-        (farmers_df['Team'] == str(team))
+        (farmers_df['Team'].astype(str) == str(team))
     ]
 
-    return subset.to_dict(
+    return filtered.to_dict(
         orient='records'
     )
 
@@ -141,32 +165,17 @@ def get_farmers(day: str, team: str):
 @app.get("/route/{day}/{team}")
 def get_route(day: str, team: str):
 
-    subset = routes_df[
-        (routes_df['Day'] == str(day))
+    filtered = routes_df[
+        (routes_df['Date'].astype(str) == str(day))
         &
-        (routes_df['Team'] == str(team))
+        (routes_df['Team'].astype(str) == str(team))
     ]
 
-    if len(subset) == 0:
+    if len(filtered) == 0:
+
         return {}
 
-    return subset.iloc[0].to_dict()
-# ---------------------------------------------------
-# PROGRESS FILE
-# ---------------------------------------------------
-
-progress_file = "progress.csv"
-
-# Create file if not exists
-if not os.path.exists(progress_file):
-
-    progress_df = pd.DataFrame(columns=[
-        "Bp Number farms",
-        "Status",
-        "Completed_Time"
-    ])
-
-    progress_df.to_csv(progress_file, index=False)
+    return filtered.iloc[0].to_dict()
 
 # ---------------------------------------------------
 # COMPLETE FARMER
@@ -181,12 +190,12 @@ def complete_farmer(bp_number: str):
         "%Y-%m-%d %H:%M:%S"
     )
 
-    # Remove existing record
     progress_df = progress_df[
-        progress_df['Bp Number farms'] != bp_number
+        progress_df['Bp Number farms']
+        !=
+        bp_number
     ]
 
-    # Add completed row
     new_row = pd.DataFrame([{
         "Bp Number farms": bp_number,
         "Status": "Completed",
@@ -206,6 +215,7 @@ def complete_farmer(bp_number: str):
     return {
         "message": "Farmer marked completed"
     }
+
 # ---------------------------------------------------
 # UNDO COMPLETE
 # ---------------------------------------------------
@@ -229,6 +239,7 @@ def undo_complete(bp_number: str):
     return {
         "message": "Completion removed"
     }
+
 # ---------------------------------------------------
 # GET PROGRESS
 # ---------------------------------------------------
@@ -251,18 +262,50 @@ def download_report():
 
     progress_df = pd.read_csv(progress_file)
 
+    # Remove duplicates if any
+    progress_df = progress_df.drop_duplicates(
+        subset=['Bp Number farms'],
+        keep='last'
+    )
+
+    # Merge with all farmer data
     merged = farmers_df.merge(
         progress_df,
         on="Bp Number farms",
         how="left"
     )
 
+    # Fill pending status
     merged['Status'] = merged['Status'].fillna(
         "Pending"
     )
 
+    merged['Completed_Time'] = merged[
+        'Completed_Time'
+    ].fillna("")
+
+    # Sort report
+    sort_columns = []
+
+    if 'Date' in merged.columns:
+        sort_columns.append('Date')
+
+    if 'Team' in merged.columns:
+        sort_columns.append('Team')
+
+    if 'village' in merged.columns:
+        sort_columns.append('village')
+
+    if len(sort_columns) > 0:
+
+        merged = merged.sort_values(
+            by=sort_columns
+        )
+
+    # Output file
     output_file = "Daily_Progress_Report.xlsx"
 
+    # Save Excel
     merged.to_excel(
         output_file,
         index=False

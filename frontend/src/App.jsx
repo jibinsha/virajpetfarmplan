@@ -11,8 +11,26 @@ import {
 
 import 'leaflet/dist/leaflet.css'
 
+import L from 'leaflet'
+
+import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png'
+import markerIcon from 'leaflet/dist/images/marker-icon.png'
+import markerShadow from 'leaflet/dist/images/marker-shadow.png'
+
 // ---------------------------------------------------
-// AUTO ZOOM COMPONENT
+// FIX LEAFLET ICONS
+// ---------------------------------------------------
+
+delete L.Icon.Default.prototype._getIconUrl
+
+L.Icon.Default.mergeOptions({
+  iconRetinaUrl: markerIcon2x,
+  iconUrl: markerIcon,
+  shadowUrl: markerShadow,
+})
+
+// ---------------------------------------------------
+// AUTO ZOOM
 // ---------------------------------------------------
 
 function ZoomToFarmers({ farmers }) {
@@ -23,16 +41,41 @@ function ZoomToFarmers({ farmers }) {
 
     if (!farmers || farmers.length === 0) return
 
-    const bounds = farmers.map(farmer => [
-      farmer.Lat,
-      farmer.Long
-    ])
+    const bounds = farmers
+      .filter(f => f.Lat && f.Long)
+      .map(farmer => [
+        parseFloat(farmer.Lat),
+        parseFloat(farmer.Long)
+      ])
 
-    map.fitBounds(bounds, {
-      padding: [50, 50]
-    })
+    if (bounds.length > 0) {
+
+      map.fitBounds(bounds, {
+        padding: [50, 50]
+      })
+
+    }
 
   }, [farmers, map])
+
+  return null
+}
+
+// ---------------------------------------------------
+// FIX MAP RESIZE
+// ---------------------------------------------------
+
+function FixMapResize() {
+
+  const map = useMap()
+
+  useEffect(() => {
+
+    setTimeout(() => {
+      map.invalidateSize()
+    }, 500)
+
+  }, [map])
 
   return null
 }
@@ -54,13 +97,19 @@ function App() {
 
   const [completedFarmers, setCompletedFarmers] = useState([])
 
+  const [showMap, setShowMap] = useState(false)
+
+  const [expandedFarmer, setExpandedFarmer] = useState(null)
+
   // ---------------------------------------------------
   // LOAD DAYS
   // ---------------------------------------------------
 
   useEffect(() => {
 
-    axios.get('https://farm-field-dashboard.onrender.com/days')
+    axios.get(
+      'https://farm-field-dashboard.onrender.com/days'
+    )
       .then(res => setDays(res.data))
       .catch(err => console.log(err))
 
@@ -83,7 +132,7 @@ function App() {
   }, [selectedDay])
 
   // ---------------------------------------------------
-  // LOAD FARMERS + ROUTE
+  // LOAD FARMERS
   // ---------------------------------------------------
 
   useEffect(() => {
@@ -193,6 +242,10 @@ function App() {
   const pendingCount =
     farmers.length - completedCount
 
+  // ---------------------------------------------------
+  // UI
+  // ---------------------------------------------------
+
   return (
 
     <div
@@ -209,7 +262,7 @@ function App() {
         style={{
           background: '#1b4332',
           color: 'white',
-          padding: '20px',
+          padding: '22px',
           boxShadow: '0 2px 10px rgba(0,0,0,0.1)'
         }}
       >
@@ -217,7 +270,8 @@ function App() {
         <h1
           style={{
             margin: 0,
-            fontSize: '28px'
+            fontSize: '28px',
+            fontWeight: '800'
           }}
         >
           🌿 Farm Field Dashboard
@@ -225,7 +279,7 @@ function App() {
 
         <p
           style={{
-            marginTop: '6px',
+            marginTop: '8px',
             opacity: 0.9
           }}
         >
@@ -251,13 +305,14 @@ function App() {
         }}
       >
 
-        {/* DAY */}
+        {/* DATE */}
 
         <select
           value={selectedDay}
           onChange={(e) => {
 
             setSelectedDay(e.target.value)
+
             setSelectedTeam('')
             setFarmers([])
             setRoute(null)
@@ -265,16 +320,14 @@ function App() {
           }}
           style={{
             padding: '12px',
-            borderRadius: '10px',
+            borderRadius: '12px',
             border: '1px solid #dcdcdc',
-            minWidth: '150px',
-            fontSize: '15px',
-            background: '#fafafa'
+            minWidth: '150px'
           }}
         >
 
           <option value=''>
-            Select Day
+            Select Date
           </option>
 
           {
@@ -284,7 +337,7 @@ function App() {
                 key={day}
                 value={day}
               >
-                Day {day}
+                {day}
               </option>
 
             ))
@@ -296,14 +349,14 @@ function App() {
 
         <select
           value={selectedTeam}
-          onChange={(e) => setSelectedTeam(e.target.value)}
+          onChange={(e) =>
+            setSelectedTeam(e.target.value)
+          }
           style={{
             padding: '12px',
-            borderRadius: '10px',
+            borderRadius: '12px',
             border: '1px solid #dcdcdc',
-            minWidth: '150px',
-            fontSize: '15px',
-            background: '#fafafa'
+            minWidth: '150px'
           }}
         >
 
@@ -340,9 +393,9 @@ function App() {
               background: '#2d6a4f',
               color: 'white',
               padding: '12px 20px',
-              borderRadius: '10px',
+              borderRadius: '12px',
               textDecoration: 'none',
-              fontWeight: '600'
+              fontWeight: '700'
             }}
           >
             🚗 Open Route
@@ -359,9 +412,9 @@ function App() {
             background: '#1d3557',
             color: 'white',
             padding: '12px 20px',
-            borderRadius: '10px',
+            borderRadius: '12px',
             textDecoration: 'none',
-            fontWeight: '600'
+            fontWeight: '700'
           }}
         >
           📥 Download Report
@@ -369,7 +422,7 @@ function App() {
 
       </div>
 
-      {/* PROGRESS CARDS */}
+      {/* PROGRESS */}
 
       <div
         style={{
@@ -383,37 +436,38 @@ function App() {
         <div
           style={{
             background: '#d8f3dc',
-            padding: '15px',
-            borderRadius: '12px',
+            padding: '16px',
+            borderRadius: '16px',
             minWidth: '180px'
           }}
         >
           <h3>✅ Completed</h3>
-
           <h1>{completedCount}</h1>
         </div>
 
         <div
           style={{
             background: '#ffe5d9',
-            padding: '15px',
-            borderRadius: '12px',
+            padding: '16px',
+            borderRadius: '16px',
             minWidth: '180px'
           }}
         >
           <h3>⏳ Pending</h3>
-
           <h1>{pendingCount}</h1>
         </div>
 
       </div>
 
-      {/* MAIN CONTENT */}
+      {/* MAIN */}
 
       <div
         style={{
           display: 'grid',
-          gridTemplateColumns: '350px 1fr',
+          gridTemplateColumns:
+            window.innerWidth < 768
+              ? '1fr'
+              : '390px 1fr',
           gap: '20px',
           padding: '20px'
         }}
@@ -424,10 +478,8 @@ function App() {
         <div
           style={{
             background: 'white',
-            borderRadius: '16px',
-            padding: '16px',
-            height: '80vh',
-            overflowY: 'auto',
+            borderRadius: '20px',
+            padding: '18px',
             boxShadow: '0 4px 14px rgba(0,0,0,0.08)'
           }}
         >
@@ -435,16 +487,13 @@ function App() {
           <h2
             style={{
               marginTop: 0,
-              marginBottom: '20px'
+              marginBottom: '18px',
+              fontSize: '32px',
+              fontWeight: '800'
             }}
           >
             📋 Assigned Farmers
           </h2>
-
-          {
-            farmers.length === 0 &&
-            <p>No farmers loaded</p>
-          }
 
           {
             farmers.map((farmer, index) => {
@@ -461,56 +510,239 @@ function App() {
                   style={{
                     border: isCompleted
                       ? '2px solid #2d6a4f'
-                      : '1px solid #ececec',
+                      : '1px solid #e8ecef',
 
-                    borderRadius: '14px',
-                    padding: '14px',
-                    marginBottom: '12px',
-
-                    background: isCompleted
-                      ? '#e9f5ee'
-                      : '#fafafa',
-
-                    display: 'flex',
-                    justifyContent: 'space-between',
-                    alignItems: 'center'
+                    borderRadius: '24px',
+                    padding: '20px',
+                    marginBottom: '18px',
+                    background: '#ffffff',
+                    boxShadow:
+                      '0 6px 18px rgba(0,0,0,0.06)'
                   }}
                 >
 
-                  {/* LEFT */}
+                  {/* BP NUMBER */}
 
-                  <div>
+                  <div
+                    style={{
+                      fontWeight: '800',
+                      color: '#1b4332',
+                      fontSize: '18px'
+                    }}
+                  >
+                    {farmer['Bp Number farms']}
+                  </div>
+
+                  {/* FARMER NAME */}
+
+                  <div
+                    style={{
+                      marginTop: '10px',
+                      fontSize: '20px',
+                      fontWeight: '700',
+                      color: '#2b2d42'
+                    }}
+                  >
+                    {farmer['Farmer Name']}
+                  </div>
+
+                  {/* VILLAGE */}
+
+                  <div
+                    style={{
+                      marginTop: '10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px'
+                    }}
+                  >
+
+                    <img
+                      src="https://cdn-icons-png.flaticon.com/512/684/684908.png"
+                      alt="village"
+                      style={{
+                        width: '16px',
+                        height: '16px',
+                        opacity: 0.8
+                      }}
+                    />
 
                     <div
                       style={{
-                        fontWeight: '700',
-                        color: '#1b4332',
-                        fontSize: '15px'
+                        color: '#555',
+                        fontSize: '14px',
+                        fontWeight: '500'
                       }}
                     >
-                      {farmer['Bp Number farms']}
+                      {farmer['village']}
                     </div>
 
-                    <div
+                  </div>
+
+                  {/* PHONE */}
+
+                  <div
+                    style={{
+                      marginTop: '18px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '10px'
+                    }}
+                  >
+
+                    <img
+                      src="https://cdn-icons-png.flaticon.com/512/724/724664.png"
+                      alt="phone"
                       style={{
-                        marginTop: '5px',
+                        width: '18px',
+                        height: '18px'
+                      }}
+                    />
+
+                    <a
+                      href={`tel:${farmer['phone number']}`}
+                      style={{
+                        textDecoration: 'none',
+                        color: '#444',
+                        fontWeight: '500'
+                      }}
+                    >
+                      {farmer['phone number']}
+                    </a>
+
+                  </div>
+
+                  {/* SEE MORE + LOCATION */}
+
+                  <div
+                    style={{
+                      marginTop: '20px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '12px'
+                    }}
+                  >
+
+                    <button
+                      onClick={() => {
+
+                        setExpandedFarmer(
+                          expandedFarmer === index
+                            ? null
+                            : index
+                        )
+
+                      }}
+                      style={{
+                        flex: 1,
+                        background: '#f1f5f3',
+                        border: '1px solid #dbe7df',
+                        padding: '12px 16px',
+                        borderRadius: '12px',
+                        cursor: 'pointer',
+                        fontWeight: '600',
+                        color: '#1b4332',
                         fontSize: '14px'
                       }}
                     >
-                      {farmer['Farmer Name']}
-                    </div>
+                      {
+                        expandedFarmer === index
+                          ? '▲ Hide Details'
+                          : '▼ See More'
+                      }
+                    </button>
+
+                    <a
+                      href={`https://www.google.com/maps?q=${farmer.Lat},${farmer.Long}`}
+                      target='_blank'
+                      rel='noreferrer'
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        background: '#edf6f1',
+                        width: '50px',
+                        height: '50px',
+                        borderRadius: '14px',
+                        flexShrink: 0
+                      }}
+                    >
+
+                      <img
+                        src="https://cdn-icons-png.flaticon.com/512/2991/2991231.png"
+                        alt="maps"
+                        style={{
+                          width: '26px',
+                          height: '26px'
+                        }}
+                      />
+
+                    </a>
+
+                  </div>
+
+                  {/* DETAILS */}
+
+                  {
+                    expandedFarmer === index &&
 
                     <div
                       style={{
-                        marginTop: '5px',
-                        fontSize: '12px',
-                        color: '#666'
+                        marginTop: '18px',
+                        padding: '18px',
+                        background: '#f8faf9',
+                        borderRadius: '16px',
+                        border: '1px solid #dde7e1'
                       }}
                     >
-                      {farmer.Lat}, {farmer.Long}
-                    </div>
 
-                    {/* COMPLETE BUTTON */}
+                      <h4
+                        style={{
+                          marginTop: 0,
+                          marginBottom: '16px',
+                          color: '#1b4332'
+                        }}
+                      >
+                        Farmer Details
+                      </h4>
+
+                      {
+                        Object.entries(farmer).map(
+                          ([key, value]) => (
+
+                            <div
+                              key={key}
+                              style={{
+                                marginBottom: '10px',
+                                fontSize: '14px',
+                                lineHeight: '1.6'
+                              }}
+                            >
+
+                              <strong>
+                                {key}:
+                              </strong>
+
+                              {' '}
+
+                              {String(value)}
+
+                            </div>
+
+                          )
+                        )
+                      }
+
+                    </div>
+                  }
+
+                  {/* ACTION */}
+
+                  <div
+                    style={{
+                      marginTop: '20px'
+                    }}
+                  >
 
                     {
                       !isCompleted &&
@@ -522,84 +754,47 @@ function App() {
                           )
                         }
                         style={{
-                          marginTop: '10px',
-                          background: '#2d6a4f',
+                          width: '100%',
+                          background:
+                            'linear-gradient(135deg, #2d6a4f, #1b4332)',
                           color: 'white',
                           border: 'none',
-                          padding: '8px 12px',
-                          borderRadius: '8px',
-                          cursor: 'pointer'
+                          padding: '16px',
+                          borderRadius: '16px',
+                          cursor: 'pointer',
+                          fontWeight: '700'
                         }}
                       >
-                        ✅ Complete
+                        ✅ Mark Complete
                       </button>
                     }
-
-                    {/* COMPLETED + UNDO */}
 
                     {
                       isCompleted &&
 
-                      <div
+                      <button
+                        onClick={() =>
+                          undoComplete(
+                            farmer['Bp Number farms']
+                          )
+                        }
                         style={{
-                          marginTop: '10px'
+                          width: '100%',
+                          background:
+                            'linear-gradient(135deg, #c1121f, #9b2226)',
+                          color: 'white',
+                          border: 'none',
+                          padding: '16px',
+                          borderRadius: '16px',
+                          cursor: 'pointer',
+                          fontWeight: '700'
                         }}
                       >
-
-                        <div
-                          style={{
-                            color: '#2d6a4f',
-                            fontWeight: 'bold',
-                            marginBottom: '8px'
-                          }}
-                        >
-                          ✔ Completed
-                        </div>
-
-                        <button
-                          onClick={() =>
-                            undoComplete(
-                              farmer['Bp Number farms']
-                            )
-                          }
-                          style={{
-                            background: '#c1121f',
-                            color: 'white',
-                            border: 'none',
-                            padding: '7px 12px',
-                            borderRadius: '8px',
-                            cursor: 'pointer'
-                          }}
-                        >
-                          ↩ Undo
-                        </button>
-
-                      </div>
+                        ↩ Undo Completion
+                      </button>
                     }
 
                   </div>
-
-                  {/* LOCATION BUTTON */}
-
-                  <a
-                    href={`https://www.google.com/maps?q=${farmer.Lat},${farmer.Long}`}
-                    target='_blank'
-                    rel='noreferrer'
-                    style={{
-                      background: '#e9f5ee',
-                      borderRadius: '12px',
-                      width: '44px',
-                      height: '44px',
-                      display: 'flex',
-                      justifyContent: 'center',
-                      alignItems: 'center',
-                      textDecoration: 'none',
-                      fontSize: '20px'
-                    }}
-                    title='Open Location'
-                  >
-                    🧭
-                  </a>
 
                 </div>
 
@@ -612,79 +807,106 @@ function App() {
 
         {/* MAP */}
 
-        <div
-          style={{
-            borderRadius: '16px',
-            overflow: 'hidden',
-            boxShadow: '0 4px 14px rgba(0,0,0,0.08)'
-          }}
-        >
+        <div>
 
-          <MapContainer
-            center={[12.2958, 75.6433]}
-            zoom={10}
+          <button
+            onClick={() =>
+              setShowMap(!showMap)
+            }
             style={{
-              height: '80vh',
+              background: '#1d3557',
+              color: 'white',
+              border: 'none',
+              padding: '14px 20px',
+              borderRadius: '12px',
+              cursor: 'pointer',
+              marginBottom: '15px',
+              fontWeight: '700',
               width: '100%'
             }}
           >
-
-            <ZoomToFarmers farmers={farmers} />
-
-            <TileLayer
-              attribution='OpenStreetMap'
-              url='https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png'
-            />
-
             {
-              farmers.map((farmer, index) => (
-
-                <Marker
-                  key={index}
-                  position={[
-                    farmer.Lat,
-                    farmer.Long
-                  ]}
-                >
-
-                  <Popup>
-
-                    <div style={{ minWidth: '250px' }}>
-
-                      <h3>
-                        {farmer['Bp Number farms']}
-                      </h3>
-
-                      <hr />
-
-                      {
-                        Object.entries(farmer).map(([key, value]) => (
-
-                          <p key={key}>
-
-                            <strong>
-                              {key}:
-                            </strong>
-
-                            {' '}
-
-                            {String(value)}
-
-                          </p>
-
-                        ))
-                      }
-
-                    </div>
-
-                  </Popup>
-
-                </Marker>
-
-              ))
+              showMap
+                ? '❌ Close Map'
+                : '🗺 Open Map'
             }
+          </button>
 
-          </MapContainer>
+          {
+            showMap &&
+
+            <div
+              style={{
+                borderRadius: '16px',
+                overflow: 'hidden',
+                boxShadow:
+                  '0 4px 14px rgba(0,0,0,0.08)'
+              }}
+            >
+
+              <MapContainer
+                center={[12.2958, 75.6433]}
+                zoom={10}
+                style={{
+                  height: '80vh',
+                  width: '100%'
+                }}
+              >
+
+                <ZoomToFarmers farmers={farmers} />
+
+                <FixMapResize />
+
+                <TileLayer
+                  attribution='Google Hybrid'
+                  url='https://mt1.google.com/vt/lyrs=y&x={x}&y={y}&z={z}'
+                />
+
+                {
+                  farmers
+                    .filter(farmer =>
+                      farmer.Lat &&
+                      farmer.Long
+                    )
+                    .map((farmer, index) => (
+
+                      <Marker
+                        key={index}
+                        position={[
+                          parseFloat(farmer.Lat),
+                          parseFloat(farmer.Long)
+                        ]}
+                      >
+
+                        <Popup>
+
+                          <div
+                            style={{
+                              minWidth: '180px'
+                            }}
+                          >
+
+                            <h3>
+                              {farmer['Bp Number farms']}
+                            </h3>
+
+                            <p>
+                              {farmer['Farmer Name']}
+                            </p>
+
+                          </div>
+
+                        </Popup>
+
+                      </Marker>
+
+                    ))
+                }
+
+              </MapContainer>
+
+            </div>
+          }
 
         </div>
 

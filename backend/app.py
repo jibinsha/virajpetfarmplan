@@ -62,9 +62,9 @@ app.add_middleware(
 # FILES
 # ---------------------------------------------------
 
-farmers_file = "data/Final_Field_Plan.xlsx"
+farmers_file = "Final_Field_Plan.xlsx"
 
-routes_file = "data/Final_Routes.xlsx"
+routes_file = "Final_Routes.xlsx"
 
 progress_file = "progress.csv"
 

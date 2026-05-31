@@ -6,7 +6,38 @@ import pandas as pd
 import os
 
 from datetime import datetime
+from sqlalchemy import create_engine
+from sqlalchemy import text
 
+DATABASE_URL = os.getenv("DATABASE_URL")
+
+engine = create_engine(DATABASE_URL)
+with engine.begin() as conn:
+
+    conn.execute(text("""
+
+        CREATE TABLE IF NOT EXISTS completed_farmers (
+
+            bp_number TEXT PRIMARY KEY
+
+        )
+
+    """))
+    conn.execute(text("""
+
+        CREATE TABLE IF NOT EXISTS farmer_comments (
+
+            id SERIAL PRIMARY KEY,
+
+            bp_number TEXT,
+
+            comment TEXT,
+
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+
+        )
+
+    """))
 # ---------------------------------------------------
 # APP
 # ---------------------------------------------------
@@ -53,38 +84,54 @@ routes_df = routes_df.fillna("")
 # CREATE PROGRESS FILE
 # ---------------------------------------------------
 
-if not os.path.exists(progress_file):
+@app.get("/progress")
+def get_progress():
 
-    progress_df = pd.DataFrame(columns=[
-        "Bp Number farms",
-        "Status",
-        "Completed_Time"
-    ])
+    with engine.begin() as conn:
 
-    progress_df.to_csv(progress_file, index=False)
+        result = conn.execute(text("""
 
+            SELECT bp_number
+            FROM completed_farmers
+
+        """))
+
+        completed = [
+
+            {"Bp Number": row[0]}
+
+            for row in result.fetchall()
+        ]
+
+    return completed
 # ---------------------------------------------------
-# GET DATES
+# GET DAYS
 # ---------------------------------------------------
 
 @app.get("/days")
 def get_days():
 
-    # Convert to datetime for proper sorting
-    farmers_df['Date'] = pd.to_datetime(
-        farmers_df['Date'],
-        errors='coerce'
-    )
+    try:
 
-    # Sort dates properly
-    sorted_dates = farmers_df['Date'] \
-        .dropna() \
-        .sort_values() \
-        .dt.strftime('%d-%m-%Y') \
-        .unique() \
-        .tolist()
+        days = sorted(
 
-    return sorted_dates
+            farmers_df['Day']
+            .dropna()
+            .astype(str)
+            .unique()
+            .tolist(),
+
+            key=lambda x: int(x)
+
+        )
+
+        return days
+
+    except Exception as e:
+
+        return {
+            "error": str(e)
+        }
 
 # ---------------------------------------------------
 # GET TEAMS
@@ -93,15 +140,8 @@ def get_days():
 @app.get("/teams/{day}")
 def get_teams(day: str):
 
-    # Convert incoming string to datetime
-    selected_date = pd.to_datetime(
-        day,
-        format='%d-%m-%Y',
-        errors='coerce'
-    )
-
     filtered = farmers_df[
-        farmers_df['Date'] == selected_date
+        farmers_df['Day'].astype(str) == str(day)
     ]
 
     teams = sorted(
@@ -117,17 +157,15 @@ def get_teams(day: str):
 # GET VILLAGES
 # ---------------------------------------------------
 
+# ---------------------------------------------------
+# GET VILLAGES
+# ---------------------------------------------------
+
 @app.get("/villages/{day}/{team}")
 def get_villages(day: str, team: str):
 
-    selected_date = pd.to_datetime(
-        day,
-        format='%d-%m-%Y',
-        errors='coerce'
-    )
-
     filtered = farmers_df[
-        (farmers_df['Date'] == selected_date)
+        (farmers_df['Day'].astype(str) == str(day))
         &
         (farmers_df['Team'].astype(str) == str(team))
     ]
@@ -148,14 +186,8 @@ def get_villages(day: str, team: str):
 @app.get("/farmers/{day}/{team}")
 def get_farmers(day: str, team: str):
 
-    selected_date = pd.to_datetime(
-        day,
-        format='%d-%m-%Y',
-        errors='coerce'
-    )
-
     filtered = farmers_df[
-        (farmers_df['Date'] == selected_date)
+        (farmers_df['Day'].astype(str) == str(day))
         &
         (farmers_df['Team'].astype(str) == str(team))
     ]
@@ -172,7 +204,7 @@ def get_farmers(day: str, team: str):
 def get_route(day: str, team: str):
 
     filtered = routes_df[
-        (routes_df['Date'].astype(str) == str(day))
+        (routes_df['Day'].astype(str) == str(day))
         &
         (routes_df['Team'].astype(str) == str(team))
     ]
@@ -182,6 +214,69 @@ def get_route(day: str, team: str):
         return {}
 
     return filtered.iloc[0].to_dict()
+# ---------------------------------------------------
+# SAVE COMMENT
+# ---------------------------------------------------
+
+@app.post("/comment/{bp_number}")
+def save_comment(bp_number: str, data: dict):
+
+    comment = data.get("comment", "")
+
+    with engine.begin() as conn:
+
+        # delete old comment
+        conn.execute(text("""
+
+            DELETE FROM farmer_comments
+
+            WHERE bp_number = :bp
+
+        """), {"bp": bp_number})
+
+        # insert new comment
+        conn.execute(text("""
+
+            INSERT INTO farmer_comments
+            (bp_number, comment)
+
+            VALUES (:bp, :comment)
+
+        """), {
+
+            "bp": bp_number,
+
+            "comment": comment
+        })
+
+    return {"status": "saved"}
+# ---------------------------------------------------
+# GET COMMENTS
+# ---------------------------------------------------
+
+@app.get("/comments")
+def get_comments():
+
+    with engine.begin() as conn:
+
+        result = conn.execute(text("""
+
+            SELECT bp_number, comment
+            FROM farmer_comments
+
+        """))
+
+        comments = [
+
+            {
+                "Bp Number": row[0],
+                "Comment": row[1]
+            }
+
+            for row in result.fetchall()
+        ]
+
+    return comments
 
 # ---------------------------------------------------
 # COMPLETE FARMER
@@ -190,74 +285,42 @@ def get_route(day: str, team: str):
 @app.post("/complete/{bp_number}")
 def complete_farmer(bp_number: str):
 
-    progress_df = pd.read_csv(progress_file)
+    with engine.begin() as conn:
 
-    current_time = datetime.now().strftime(
-        "%Y-%m-%d %H:%M:%S"
-    )
+        conn.execute(text("""
 
-    progress_df = progress_df[
-        progress_df['Bp Number farms']
-        !=
-        bp_number
-    ]
+            INSERT INTO completed_farmers (bp_number)
 
-    new_row = pd.DataFrame([{
-        "Bp Number farms": bp_number,
-        "Status": "Completed",
-        "Completed_Time": current_time
-    }])
+            VALUES (:bp)
 
-    progress_df = pd.concat(
-        [progress_df, new_row],
-        ignore_index=True
-    )
+            ON CONFLICT (bp_number)
 
-    progress_df.to_csv(
-        progress_file,
-        index=False
-    )
+            DO NOTHING
 
-    return {
-        "message": "Farmer marked completed"
-    }
+        """), {"bp": bp_number})
+
+    return {"status": "success"}
 
 # ---------------------------------------------------
 # UNDO COMPLETE
 # ---------------------------------------------------
 
 @app.post("/undo/{bp_number}")
-def undo_complete(bp_number: str):
+def undo_farmer(bp_number: str):
 
-    progress_df = pd.read_csv(progress_file)
+    with engine.begin() as conn:
 
-    progress_df = progress_df[
-        progress_df['Bp Number farms']
-        !=
-        bp_number
-    ]
+        conn.execute(text("""
 
-    progress_df.to_csv(
-        progress_file,
-        index=False
-    )
+            DELETE FROM completed_farmers
 
-    return {
-        "message": "Completion removed"
-    }
+            WHERE bp_number = :bp
 
-# ---------------------------------------------------
-# GET PROGRESS
-# ---------------------------------------------------
+        """), {"bp": bp_number})
 
-@app.get("/progress")
-def get_progress():
+    return {"status": "success"}
 
-    progress_df = pd.read_csv(progress_file)
 
-    return progress_df.to_dict(
-        orient='records'
-    )
 
 # ---------------------------------------------------
 # DOWNLOAD REPORT
@@ -270,14 +333,14 @@ def download_report():
 
     # Remove duplicates if any
     progress_df = progress_df.drop_duplicates(
-        subset=['Bp Number farms'],
+        subset=['Bp Number'],
         keep='last'
     )
 
     # Merge with all farmer data
     merged = farmers_df.merge(
         progress_df,
-        on="Bp Number farms",
+        on="Bp Number",
         how="left"
     )
 
@@ -293,8 +356,8 @@ def download_report():
     # Sort report
     sort_columns = []
 
-    if 'Date' in merged.columns:
-        sort_columns.append('Date')
+    if 'Day' in merged.columns:
+        sort_columns.append('Day')
 
     if 'Team' in merged.columns:
         sort_columns.append('Team')

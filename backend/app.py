@@ -7,7 +7,7 @@ import os
 import os
 
 print("FILES:", os.listdir("."))
-print("BACKEND FILES:", os.listdir("data"))
+
 from datetime import datetime
 from sqlalchemy import create_engine
 from sqlalchemy import text
